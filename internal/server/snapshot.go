@@ -50,7 +50,7 @@ func (s *Server) snapshot(ctx context.Context, dir string) (string, any, func(),
 		cleanup()
 		return "", nil, func() {}, err
 	}
-	if err := os.MkdirAll(snap, 0o755); err != nil {
+	if err := os.MkdirAll(snap, 0o700); err != nil {
 		return fail(err)
 	}
 
@@ -90,7 +90,7 @@ func (s *Server) snapshot(ctx context.Context, dir string) (string, any, func(),
 func removeTree(path string) error {
 	filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err == nil && d.IsDir() {
-			os.Chmod(p, 0o755)
+			os.Chmod(p, 0o700) // owner only: it is about to be deleted
 		}
 		return nil
 	})
