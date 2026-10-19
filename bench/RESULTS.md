@@ -88,12 +88,12 @@ quarter, and `--share` meant one execution and about 60% less CPU.
 | --- | --- |
 | `--snapshot` job while another agent edits | job read `v1`, the edit landed (`v2`), no snapshot left behind |
 | Acknowledged write, then `SIGKILL` before the journal was emptied (3 rounds) | the edit was recovered on restart every time. Process crash only, not power loss |
-| Load gate with a busy machine and no job running | the first job waited instead of starting |
+| Load gate, forced by setting `--max-load` to 0.000001, with no job running | the first job waited instead of starting. This checks the gate's wiring, not how it judges a really busy machine |
 | `shutdown` with 33 connections that sent half a JSON request | daemon exited in 3.85 ms |
 
 ## Not covered yet
 
 - Real projects with `node_modules`, language servers and full test suites.
-- Power loss or fault injection; durability tests cover journal replay and torn
-  tails only.
+- Physical power loss and storage faults (failed `fsync` or writes) were not
+  injected. Process-crash recovery is covered by the `SIGKILL` check above.
 - More rounds, other machines, Linux.
