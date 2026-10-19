@@ -122,7 +122,9 @@ outside `avc` (the daemon reloaded it; retry) · `6` busy, a hard limit was hit
   writable by group or others. The client refuses a socket or directory that
   is a symlink or belongs to another user, before sending anything. The daemon
   does not check the connecting process's UID itself; it relies on these file
-  permissions.
+  permissions. The state directory `.avc/` must pass the same checks before
+  the daemon writes, locks or cleans anything in it. A symlinked `.avc` or
+  `.avc/snaps` is refused.
 
 ## Benchmarks
 

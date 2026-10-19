@@ -1,6 +1,6 @@
 {
-  "avc_binary_sha256": "e7a20be1f323d81cdf8df291ed02fe4d9506b4bf8619e82a3d9a608d8d00a058",
-  "timestamp_utc": "2026-10-19T14:36:45Z",
+  "avc_binary_sha256": "7f4268cabf9b7b74d685eeb962e641e7ce88b10892767988426e252ef7db4353",
+  "timestamp_utc": "2026-10-19T14:43:06Z",
   "results": [
     {
       "test": "snapshot_concurrent_edit",
@@ -30,7 +30,37 @@
       "test": "shutdown_with_partial_json_connections",
       "correct": true,
       "connections": 33,
-      "shutdown_ms": 4.06
+      "shutdown_ms": 32.61
+    },
+    {
+      "test": "snapshot_sigkill_restart_cleanup",
+      "correct": true,
+      "remaining_snapshots": 0,
+      "limit": "owned orphan worker explicitly terminated by harness before restart"
+    },
+    {
+      "test": "snapshot_readonly_directory_cleanup",
+      "correct": true,
+      "directory_mode": "0555",
+      "remaining_snapshots": 0
+    },
+    {
+      "test": "snapshot_cleanup_failure_fail_closed",
+      "correct": true,
+      "injection": "macOS UF_IMMUTABLE in owned temporary snapshot",
+      "next_snapshot_refused": true,
+      "managed_edit_succeeded": true,
+      "restart_refused_until_cleanup_possible": true
+    },
+    {
+      "test": "state_directory_symlink_refused_before_io",
+      "correct": true,
+      "paths_tested": [
+        ".avc",
+        ".avc/snaps"
+      ],
+      "external_content_and_modes_preserved": true,
+      "external_metadata_created": false
     }
   ]
 }

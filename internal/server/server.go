@@ -50,7 +50,12 @@ func Listen(root string, cfg govern.Config) (*Server, error) {
 		return nil, err
 	}
 	sock := proto.SocketPath(root)
-	if err := removeTree(filepath.Join(root, ".avc", "snaps")); err != nil { // leftovers from a crash
+	snaps := filepath.Join(root, ".avc", "snaps")
+	if st, err := os.Lstat(snaps); err == nil && (st.Mode()&os.ModeSymlink != 0 || !st.IsDir()) {
+		eng.Close()
+		return nil, fmt.Errorf("unsafe %s: not a plain directory", snaps)
+	}
+	if err := removeTree(snaps); err != nil { // leftovers from a crash
 		eng.Close()
 		return nil, fmt.Errorf("cannot clear old snapshots: %w", err)
 	}

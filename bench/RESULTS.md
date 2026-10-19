@@ -60,6 +60,11 @@ How to read this:
 
 ## Regression on the release candidate
 
+> The performance numbers in this file were measured on binaries `8bd5759b…`
+> (first table) and `6db3af66…` (regression). Later commits only tightened
+> security and snapshot cleanup, and were checked with the acceptance suite
+> below, not re-benchmarked.
+
 After the review fixes (live-request budget, `--snapshot`, journal fail-closed
 paths, shutdown), the `avc` mode and the resource suite ran again on one fixed
 binary (sha256 `6db3af66…`): 3 rounds, all correct. Raw data is in
@@ -81,8 +86,9 @@ quarter, and `--share` meant one execution and about 60% less CPU.
 ## Acceptance checks
 
 `python3 bench/acceptance_smoke.py` uses `bin/avc` and throwaway fixtures in
-`/tmp`. It was last run on the published binary with the socket ownership
-checks (sha256 `e7a20be1…`) and recorded the following in
+`/tmp`. It was last run on the published binary (sha256 `7f4268ca…`). The
+script checks that the binary does not change during the run. It recorded the
+following in
 [`results/acceptance-smoke.json`](results/acceptance-smoke.json):
 
 | Check | Result |
@@ -90,7 +96,11 @@ checks (sha256 `e7a20be1…`) and recorded the following in
 | `--snapshot` job while another agent edits | job read `v1`, the edit landed (`v2`), no snapshot left behind |
 | Acknowledged write, then `SIGKILL` before the journal was emptied (3 rounds) | the edit was recovered on restart every time. Process crash only, not power loss |
 | Load gate, forced by setting `--max-load` to 0.000001, with no job running | the first job waited instead of starting. This checks the gate's wiring, not how it judges a really busy machine |
-| `shutdown` with 33 connections that sent half a JSON request | daemon exited in 4.06 ms |
+| `shutdown` with 33 connections that sent half a JSON request | daemon exited in 32.61 ms |
+| Daemon killed (`SIGKILL`) while a `--snapshot` job held a clone | the restart removed the leftover clone |
+| Job left a read-only (`0555`) directory inside its snapshot | the clone was still removed |
+| Clone made undeletable (macOS immutable flag) | later `--snapshot` runs and restarts were refused while managed edits kept working; everything recovered once the flag was cleared |
+| `.avc` or `.avc/snaps` is a symlink to a directory outside the repo | the daemon refused to start before any I/O there; the outside files kept their content and modes |
 
 ## Not covered yet
 

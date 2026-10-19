@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -149,7 +150,121 @@ def partial_connections():
         finally:
             for s in connections: s.close()
 
-for name in sys.argv[1:] or ['snapshot','crash','load_gate','partial_connections']:
+def snapshot_crash():
+    with fixture() as f, tempfile.TemporaryDirectory(prefix='avc-signals-', dir='/tmp') as signals:
+        (f.root/'state.txt').write_text('v1')
+        ready=Path(signals)/'ready'
+        f.start()
+        job_group=None
+        try:
+            code="import json,os,time; from pathlib import Path; Path(%r).write_text(json.dumps({'pid':os.getpid(),'pgid':os.getpgrp()})); time.sleep(10)" % str(ready)
+            p=f.client('run','--snapshot','--',sys.executable,'-c',code)
+            end=time.monotonic()+6
+            while not ready.exists() and time.monotonic()<end:
+                assert p.poll() is None, p.communicate()
+                time.sleep(.02)
+            assert ready.exists(), 'snapshot did not start'
+            worker=json.loads(ready.read_text())
+            assert worker['pgid'] in (worker['pid'],f.proc.pid), worker
+            job_group=worker['pgid']
+            assert len(list((f.root/'.avc/snaps').iterdir()))==1
+            f.stop(signal.SIGKILL)
+            # SIGKILL cannot run daemon cleanup. This test owns and stops the
+            # worker explicitly; it makes no claim about orphan-job recovery.
+            os.killpg(job_group,signal.SIGKILL)
+            job_group=None
+            p.communicate(timeout=3)
+            assert len(list((f.root/'.avc/snaps').iterdir()))==1
+            f.start()
+            snaps=f.root/'.avc/snaps'
+            assert not snaps.exists() or not list(snaps.iterdir())
+            assert f.avc('cat','state.txt').stdout=='v1'
+            f.stop()
+            RESULTS.append({'test':'snapshot_sigkill_restart_cleanup','correct':True,'remaining_snapshots':0,'limit':'owned orphan worker explicitly terminated by harness before restart'})
+        finally:
+            if job_group is not None:
+                try: os.killpg(job_group,signal.SIGKILL)
+                except ProcessLookupError: pass
+
+def snapshot_readonly():
+    with fixture() as f:
+        (f.root/'state.txt').write_text('v1')
+        f.start()
+        try:
+            code="from pathlib import Path; p=Path('locked'); p.mkdir(); (p/'file').write_text('data'); p.chmod(0o555)"
+            f.avc('run','--snapshot','--',sys.executable,'-c',code)
+            assert not list((f.root/'.avc/snaps').iterdir())
+            f.avc('run','--snapshot','--','true')
+            assert not list((f.root/'.avc/snaps').iterdir())
+            RESULTS.append({'test':'snapshot_readonly_directory_cleanup','correct':True,'directory_mode':'0555','remaining_snapshots':0})
+        finally:
+            for path in (f.root/'.avc/snaps').glob('*/locked'):
+                path.chmod(0o700)
+
+def snapshot_cleanup_failure():
+    if sys.platform!='darwin':
+        RESULTS.append({'test':'snapshot_cleanup_failure_fail_closed','skipped':'macOS uchg injection only'})
+        return
+    with fixture() as f:
+        (f.root/'state.txt').write_text('v1')
+        f.start()
+        try:
+            code="from pathlib import Path; import os,stat; p=Path('locked-file'); p.write_text('data'); os.chflags(p,stat.UF_IMMUTABLE)"
+            f.avc('run','--snapshot','--',sys.executable,'-c',code,check=False)
+            clones=list((f.root/'.avc/snaps').iterdir())
+            assert len(clones)==1, clones
+            refused=f.avc('run','--snapshot','--','true',check=False)
+            assert refused.returncode!=0 and 'disabled until restart' in refused.stderr, (refused.returncode,refused.stdout,refused.stderr)
+            assert list((f.root/'.avc/snaps').iterdir())==clones
+            f.avc('edit','state.txt','--old','v1','--new','v2')
+            assert f.avc('cat','state.txt').stdout=='v2'
+            f.stop()
+            failed=f.client('daemon','--root',str(f.root))
+            out,err=failed.communicate(timeout=5)
+            assert failed.returncode!=0 and 'cannot clear old snapshots' in err, (failed.returncode,out,err)
+            for path in (f.root/'.avc/snaps').glob('*/locked-file'):
+                os.chflags(path,0)
+            f.start()
+            f.avc('run','--snapshot','--','true')
+            assert not list((f.root/'.avc/snaps').iterdir())
+            RESULTS.append({'test':'snapshot_cleanup_failure_fail_closed','correct':True,'injection':'macOS UF_IMMUTABLE in owned temporary snapshot','next_snapshot_refused':True,'managed_edit_succeeded':True,'restart_refused_until_cleanup_possible':True})
+        finally:
+            for path in (f.root/'.avc/snaps').glob('*/locked-file'):
+                os.chflags(path,0)
+
+def state_directory_symlink():
+    with fixture() as f, tempfile.TemporaryDirectory(prefix='avc-external-',dir='/tmp') as external:
+        outside=Path(external)
+        snaps=outside/'snaps'
+        snaps.mkdir()
+        sentinel=snaps/'must-remain.txt'
+        sentinel.write_text('outside repository; preserve exactly')
+        sentinel.chmod(0o444)
+        snaps.chmod(0o555)
+        (f.root/'.avc').symlink_to(outside,target_is_directory=True)
+        try:
+            failed=f.client('daemon','--root',str(f.root))
+            out,err=failed.communicate(timeout=5)
+            assert failed.returncode!=0, (out,err)
+            assert sentinel.read_text()=='outside repository; preserve exactly'
+            assert stat.S_IMODE(sentinel.stat().st_mode)==0o444
+            assert stat.S_IMODE(snaps.stat().st_mode)==0o555
+            assert sorted(p.name for p in outside.iterdir())==['snaps'], 'daemon wrote metadata through symlink'
+            (f.root/'.avc').unlink()
+            (f.root/'.avc').mkdir(mode=0o700)
+            (f.root/'.avc/snaps').symlink_to(snaps,target_is_directory=True)
+            failed=f.client('daemon','--root',str(f.root))
+            out,err=failed.communicate(timeout=5)
+            assert failed.returncode!=0, (out,err)
+            assert sentinel.read_text()=='outside repository; preserve exactly'
+            assert stat.S_IMODE(sentinel.stat().st_mode)==0o444
+            assert stat.S_IMODE(snaps.stat().st_mode)==0o555
+            assert sorted(p.name for p in outside.iterdir())==['snaps']
+            RESULTS.append({'test':'state_directory_symlink_refused_before_io','correct':True,'paths_tested':['.avc','.avc/snaps'],'external_content_and_modes_preserved':True,'external_metadata_created':False})
+        finally:
+            if snaps.exists(): snaps.chmod(0o700)
+
+for name in sys.argv[1:] or ['snapshot','crash','load_gate','partial_connections','snapshot_crash','snapshot_readonly','snapshot_cleanup_failure','state_directory_symlink']:
     globals()[name]()
 assert hashlib.sha256(AVC.read_bytes()).hexdigest() == AVC_HASH, 'binary changed during acceptance run'
 output={'avc_binary_sha256':AVC_HASH, 'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()), 'results':RESULTS}

@@ -81,8 +81,13 @@ type Engine struct {
 func Open(root string) (*Engine, error) {
 	root = proto.Canonical(root)
 	dir := filepath.Join(root, ".avc")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// Verify .avc before touching anything inside it: a symlink here would
+	// send the journal, lock and snapshot cleanup outside the repository.
+	if err := os.Mkdir(dir, 0o700); err != nil && !os.IsExist(err) {
 		return nil, err
+	}
+	if err := proto.CheckOwned(dir, true); err != nil {
+		return nil, fmt.Errorf("unsafe %s: %w", dir, err)
 	}
 	// Keep private state out of git without touching the user's .gitignore.
 	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*\n"), 0o644); err != nil {
