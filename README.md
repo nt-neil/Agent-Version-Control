@@ -87,7 +87,10 @@ outside `avc` (the daemon reloaded it; retry) · `6` busy, a hard limit was hit
   one accepted version. It needs a copy-on-write filesystem (APFS, or reflinks
   on Btrfs/XFS) and fails instead of doing a full copy. It copies everything
   except `.avc/`, `.git` and `node_modules` included (cheap when cloned), and
-  gives up after 2 minutes. It cannot yet be combined with `--share` or
+  gives up after 2 minutes. Clones are removed even if the job made them
+  read-only. If one still cannot be removed, `--snapshot` is refused until the
+  daemon restarts, and a restart that cannot clear `.avc/snaps` will not
+  start. It cannot yet be combined with `--share` or
   `--freeze`. `--freeze`
   instead pauses managed edits for the whole run; paused edits wait in the
   queue and are not lost. `--share` implies `--freeze`, so

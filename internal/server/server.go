@@ -30,6 +30,7 @@ type Server struct {
 	cancel context.CancelFunc
 
 	mu        sync.Mutex
+	snapErr   error // set when a snapshot could not be removed
 	liveBytes int
 	jobs      int
 	conns     map[net.Conn]struct{}
@@ -48,7 +49,10 @@ func Listen(root string, cfg govern.Config) (*Server, error) {
 		return nil, err
 	}
 	sock := proto.SocketPath(root)
-	os.RemoveAll(filepath.Join(root, ".avc", "snaps")) // leftovers from a crash
+	if err := removeTree(filepath.Join(root, ".avc", "snaps")); err != nil { // leftovers from a crash
+		eng.Close()
+		return nil, fmt.Errorf("cannot clear old snapshots: %w", err)
+	}
 	os.MkdirAll(filepath.Dir(sock), 0o700)
 	if err := proto.CheckOwned(filepath.Dir(sock), true); err != nil {
 		eng.Close()

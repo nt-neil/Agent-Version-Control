@@ -80,8 +80,9 @@ quarter, and `--share` meant one execution and about 60% less CPU.
 
 ## Acceptance checks
 
-`python3 bench/acceptance_smoke.py` (uses `bin/avc` and throwaway fixtures in
-`/tmp`) recorded the following in
+`python3 bench/acceptance_smoke.py` uses `bin/avc` and throwaway fixtures in
+`/tmp`. It was last run on the published binary with the socket ownership
+checks (sha256 `e7a20be1…`) and recorded the following in
 [`results/acceptance-smoke.json`](results/acceptance-smoke.json):
 
 | Check | Result |
@@ -89,7 +90,7 @@ quarter, and `--share` meant one execution and about 60% less CPU.
 | `--snapshot` job while another agent edits | job read `v1`, the edit landed (`v2`), no snapshot left behind |
 | Acknowledged write, then `SIGKILL` before the journal was emptied (3 rounds) | the edit was recovered on restart every time. Process crash only, not power loss |
 | Load gate, forced by setting `--max-load` to 0.000001, with no job running | the first job waited instead of starting. This checks the gate's wiring, not how it judges a really busy machine |
-| `shutdown` with 33 connections that sent half a JSON request | daemon exited in 3.85 ms |
+| `shutdown` with 33 connections that sent half a JSON request | daemon exited in 4.06 ms |
 
 ## Not covered yet
 

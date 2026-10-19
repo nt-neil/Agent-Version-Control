@@ -31,7 +31,21 @@ func (s *Server) snapshot(ctx context.Context, dir string) (string, any, func(),
 	var id [6]byte
 	rand.Read(id[:])
 	snap := filepath.Join(root, ".avc", "snaps", hex.EncodeToString(id[:]))
-	cleanup := func() { os.RemoveAll(snap) }
+	s.mu.Lock()
+	disabled := s.snapErr
+	s.mu.Unlock()
+	if disabled != nil {
+		return "", nil, func() {}, disabled
+	}
+	// A clone that cannot be removed would break the bound on snapshots, so a
+	// failed cleanup disables --snapshot until a restart clears .avc/snaps.
+	cleanup := func() {
+		if err := removeTree(snap); err != nil {
+			s.mu.Lock()
+			s.snapErr = fmt.Errorf("--snapshot disabled until restart: could not remove %s: %w", snap, err)
+			s.mu.Unlock()
+		}
+	}
 	fail := func(err error) (string, any, func(), error) {
 		cleanup()
 		return "", nil, func() {}, err
@@ -70,4 +84,15 @@ func (s *Server) snapshot(ctx context.Context, dir string) (string, any, func(),
 		rel = "."
 	}
 	return filepath.Join(snap, rel), gen, cleanup, nil
+}
+
+// removeTree deletes a snapshot even if the job made parts of it read-only.
+func removeTree(path string) error {
+	filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			os.Chmod(p, 0o755)
+		}
+		return nil
+	})
+	return os.RemoveAll(path)
 }
