@@ -205,6 +205,10 @@ func call(req proto.Request, raw bool) int {
 			req.Path = proto.Canonical(wd) + "/" + req.Path // engine relativizes against its root
 		}
 	}
+	if err := proto.CheckSocket(proto.SocketPath(root)); err != nil {
+		fmt.Fprintln(os.Stderr, "avc: refusing daemon socket:", err)
+		return proto.ExitError
+	}
 	c, err := net.Dial("unix", proto.SocketPath(root))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "avc:", err)

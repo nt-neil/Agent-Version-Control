@@ -5,9 +5,11 @@ package proto
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // Exit codes shared by the CLI and the daemon.
@@ -90,11 +92,44 @@ func Canonical(p string) string {
 	return p
 }
 
-// FindRoot walks up from dir looking for a directory whose daemon socket exists.
+// CheckOwned refuses a path that is a symlink, is not owned by the current
+// user, or (for directories) is writable by group or others. It guards the
+// socket and its directory against another local user planting either.
+func CheckOwned(path string, wantDir bool) error {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	switch {
+	case st.Mode()&os.ModeSymlink != 0:
+		return errors.New(path + " is a symlink")
+	case !ok || int(sys.Uid) != os.Getuid():
+		return errors.New(path + " is not owned by the current user")
+	case wantDir && !st.IsDir():
+		return errors.New(path + " is not a directory")
+	case wantDir && st.Mode().Perm()&0o022 != 0:
+		return errors.New(path + " is writable by other users")
+	case !wantDir && st.Mode()&os.ModeSocket == 0:
+		return errors.New(path + " is not a socket")
+	}
+	return nil
+}
+
+// CheckSocket verifies a daemon socket and its directory before use.
+func CheckSocket(sock string) error {
+	if err := CheckOwned(filepath.Dir(sock), true); err != nil {
+		return err
+	}
+	return CheckOwned(sock, false)
+}
+
+// FindRoot walks up from dir looking for a directory whose daemon socket
+// exists and belongs to the current user.
 func FindRoot(dir string) (string, bool) {
 	dir = Canonical(dir)
 	for {
-		if _, err := os.Stat(SocketPath(dir)); err == nil {
+		if CheckSocket(SocketPath(dir)) == nil {
 			return dir, true
 		}
 		parent := filepath.Dir(dir)

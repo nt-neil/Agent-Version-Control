@@ -114,6 +114,12 @@ outside `avc` (the daemon reloaded it; retry) · `6` busy, a hard limit was hit
   Paths through symlinks are refused.
 - One daemon per repository, enforced by a lock file in `.avc/`. `.avc/` keeps
   itself out of git.
+- **Local security.** The daemon socket is mode `0600`. Its directory (`.avc/`,
+  or `/tmp/avc-<uid>/` for deep paths) must belong to you and must not be
+  writable by group or others. The client refuses a socket or directory that
+  is a symlink or belongs to another user, before sending anything. The daemon
+  does not check the connecting process's UID itself; it relies on these file
+  permissions.
 
 ## Benchmarks
 

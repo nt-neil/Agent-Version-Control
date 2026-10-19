@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -49,9 +50,19 @@ func Listen(root string, cfg govern.Config) (*Server, error) {
 	sock := proto.SocketPath(root)
 	os.RemoveAll(filepath.Join(root, ".avc", "snaps")) // leftovers from a crash
 	os.MkdirAll(filepath.Dir(sock), 0o700)
+	if err := proto.CheckOwned(filepath.Dir(sock), true); err != nil {
+		eng.Close()
+		return nil, fmt.Errorf("unsafe socket directory: %w", err)
+	}
 	os.Remove(sock)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
+		eng.Close()
+		return nil, err
+	}
+	// Only the owner may connect; the client also checks owner and mode.
+	if err := os.Chmod(sock, 0o600); err != nil {
+		ln.Close()
 		eng.Close()
 		return nil, err
 	}
