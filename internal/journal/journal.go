@@ -13,6 +13,8 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+
+	"github.com/nt-neil/Agent-Version-Control/internal/proto"
 )
 
 type Record struct {
@@ -29,7 +31,7 @@ type Journal struct {
 // Open opens (or creates) the log and returns every intact record in order.
 // A torn or corrupt tail is discarded.
 func Open(path string) (*Journal, []Record, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := proto.OpenState(path, os.O_RDWR|os.O_CREATE)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -55,7 +55,7 @@ func TestDisjointEditsToOneFileAllLand(t *testing.T) {
 
 func TestSameAnchorExactlyOneWins(t *testing.T) {
 	root := t.TempDir()
-	os.WriteFile(filepath.Join(root, "f"), []byte("x = 1\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "f"), []byte("x = 1;\n"), 0o644)
 	e := open(t, root)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -64,7 +64,7 @@ func TestSameAnchorExactlyOneWins(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			r := e.Do(proto.Request{Op: "edit", Path: "f", Old: "x = 1", New: fmt.Sprintf("x = %d", i+2)})
+			r := e.Do(proto.Request{Op: "edit", Path: "f", Old: "x = 1;", New: fmt.Sprintf("x = %d;", i+2)})
 			if r.Code == proto.ExitOK {
 				mu.Lock()
 				wins++

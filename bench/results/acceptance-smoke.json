@@ -1,6 +1,6 @@
 {
-  "avc_binary_sha256": "7f4268cabf9b7b74d685eeb962e641e7ce88b10892767988426e252ef7db4353",
-  "timestamp_utc": "2026-10-19T14:43:06Z",
+  "avc_binary_sha256": "2960db0e18a95610851067a101e2f120b9e84427d784c94e5e76aa0167959070",
+  "timestamp_utc": "2026-10-19T14:49:27Z",
   "results": [
     {
       "test": "snapshot_concurrent_edit",
@@ -30,7 +30,7 @@
       "test": "shutdown_with_partial_json_connections",
       "correct": true,
       "connections": 33,
-      "shutdown_ms": 32.61
+      "shutdown_ms": 9.37
     },
     {
       "test": "snapshot_sigkill_restart_cleanup",

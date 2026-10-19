@@ -124,7 +124,9 @@ outside `avc` (the daemon reloaded it; retry) · `6` busy, a hard limit was hit
   does not check the connecting process's UID itself; it relies on these file
   permissions. The state directory `.avc/` must pass the same checks before
   the daemon writes, locks or cleans anything in it. A symlinked `.avc` or
-  `.avc/snaps` is refused.
+  `.avc/snaps` is refused. Files inside `.avc/` (`lock`, `journal`,
+  `.gitignore`) are opened without following symlinks and must be regular
+  files, so a link planted in a cloned repository cannot redirect writes.
 
 ## Benchmarks
 

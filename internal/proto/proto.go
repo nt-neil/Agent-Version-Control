@@ -116,6 +116,21 @@ func CheckOwned(path string, wantDir bool) error {
 	return nil
 }
 
+// OpenState opens a file inside .avc without following symlinks and refuses
+// anything that is not a regular file, so a planted link (for example one
+// committed to a cloned repository) can never redirect daemon writes.
+func OpenState(path string, flag int) (*os.File, error) {
+	f, err := os.OpenFile(path, flag|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		f.Close()
+		return nil, errors.New(path + " is not a regular file")
+	}
+	return f, nil
+}
+
 // CheckSocket verifies a daemon socket and its directory before use.
 func CheckSocket(sock string) error {
 	if err := CheckOwned(filepath.Dir(sock), true); err != nil {

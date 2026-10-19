@@ -90,10 +90,16 @@ func Open(root string) (*Engine, error) {
 		return nil, fmt.Errorf("unsafe %s: %w", dir, err)
 	}
 	// Keep private state out of git without touching the user's .gitignore.
-	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*\n"), 0o644); err != nil {
+	gi, err := proto.OpenState(filepath.Join(dir, ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o644)
+	_, err = gi.WriteString("*\n")
+	gi.Close()
+	if err != nil {
+		return nil, err
+	}
+	lock, err := proto.OpenState(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE)
 	if err != nil {
 		return nil, err
 	}
