@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nt-neil/Agent-Version-Control/internal/engine"
@@ -59,7 +60,11 @@ func Listen(root string, cfg govern.Config) (*Server, error) {
 		return nil, fmt.Errorf("unsafe socket directory: %w", err)
 	}
 	os.Remove(sock)
+	// Create the socket as 0600 from the start: no window where it follows the
+	// umask. Nothing else creates files at this point of startup.
+	old := syscall.Umask(0o177)
 	ln, err := net.Listen("unix", sock)
+	syscall.Umask(old)
 	if err != nil {
 		eng.Close()
 		return nil, err
