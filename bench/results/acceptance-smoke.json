@@ -1,0 +1,36 @@
+{
+  "avc_binary_sha256": "6db3af66f46f28f9fe90dbfb8f7c4cbf7faf1349957de0b4d3c2a1ab5fb5b147",
+  "timestamp_utc": "2026-10-19T14:32:18Z",
+  "results": [
+    {
+      "test": "snapshot_concurrent_edit",
+      "correct": true,
+      "job_version": "v1",
+      "live_version": "v2",
+      "remaining_snapshots": 0
+    },
+    {
+      "test": "acked_write_sigkill_recovery",
+      "correct": true,
+      "rounds": 3,
+      "journal_bytes_before_kill": [
+        46,
+        46,
+        46
+      ],
+      "limit": "process crash only; not physical power loss"
+    },
+    {
+      "test": "load_gate_before_first_job",
+      "correct": true,
+      "started": 0,
+      "waits_for_load": 1
+    },
+    {
+      "test": "shutdown_with_partial_json_connections",
+      "correct": true,
+      "connections": 33,
+      "shutdown_ms": 3.85
+    }
+  ]
+}
