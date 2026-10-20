@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/bin/avc hook claude",
+            "timeout": 30,
+            "statusMessage": "Routing edit through avc"
+          }
+        ]
+      }
+    ]
+  }
+}

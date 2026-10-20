@@ -19,12 +19,19 @@ the old binary. Restart it only when no other agent is mid-task:
 
 ## 2. Change files through avc, not directly
 
-Do not use your editor or file-writing tools on tracked files. Use:
+**Claude Code:** `.claude/settings.json` routes your Edit and Write tools
+through avc. Use them normally while the daemon runs. A successful change comes
+back as a blocked tool call that says "Applied through avc", which means it
+landed. Do not retry it. `replace_all` and MultiEdit are refused; make one
+unique edit at a time.
+
+**Other agents and shell use:**
 
 ```sh
 bin/avc edit PATH --old 'exact text' --new 'replacement'        # most changes
+bin/avc append PATH --text '...'                                # add to the end; never conflicts
 bin/avc write PATH --stdin --base absent < new-file             # new file
-bin/avc write PATH --stdin --base "$(bin/avc cat PATH | shasum -a 256 | cut -d' ' -f1)" < rewritten   # full rewrite
+bin/avc write PATH --stdin --base "$(bin/avc cat PATH --sha)" < rewritten   # full rewrite
 bin/avc cat PATH                                                # read the latest version
 ```
 

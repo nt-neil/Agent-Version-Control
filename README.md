@@ -43,8 +43,9 @@ avc daemon --root /path/to/repo &      # one per repository
 cd /path/to/repo
 avc edit src/app.ts --old 'retries = 3' --new 'retries = 5'
 avc cat src/app.ts
+avc append CHANGELOG.md --text "- retries raised to 5"   # appends never conflict
 T=$(avc lease acquire src/db.ts --agent agent-7 --ttl 30s)
-avc write src/db.ts --file /tmp/db.ts --token "$T"
+avc write src/db.ts --file /tmp/db.ts --base "$(avc cat src/db.ts --sha)" --token "$T"
 avc lease release src/db.ts --token "$T"
 
 avc run --snapshot -- npm test         # queued, budgeted, runs in a private clone
@@ -57,6 +58,46 @@ Exit codes: `0` ok · `1` error · `2` usage / rejected path · `3` conflict (an
 missing or ambiguous, `--base` mismatch) · `4` lease refused · `5` file changed
 outside `avc` (the daemon reloaded it; retry) · `6` busy, a hard limit was hit
 (retry). `avc run` passes through the command's own exit code.
+
+### Claude Code
+
+Add a PreToolUse hook (this repository's own `.claude/settings.json` is an
+example) and Claude Code's Edit and Write tools go through avc automatically:
+
+```json
+{ "hooks": { "PreToolUse": [ { "matcher": "Edit|Write|MultiEdit",
+  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/bin/avc hook claude" } ] } ] } }
+```
+
+When a daemon serves the file, the hook applies the change through avc and
+tells Claude it has landed, or why it was refused. Without a daemon it does
+nothing and the tools work as usual. `replace_all` and MultiEdit are refused,
+with a hint to use one unique edit at a time.
+
+## Working with GitHub and other Git hosts
+
+avc does not replace Git or your Git host. It sits in front of Git on **one
+machine**, so many agents can share a working tree there. It works with any
+Git host: GitHub, GitLab, Bitbucket, Gitea.
+
+```
+ agents on this machine ──avc edit / run──▶ avc daemon ──avc checkpoint──▶ git commit ──git push──▶ GitHub / GitLab / …
+```
+
+- `avc checkpoint` makes an ordinary Git commit. Push, pull, pull requests,
+  CI and code review work as before.
+- avc's own state (`.avc/`: journal, lock, snapshots) never leaves the
+  machine. It is excluded from Git automatically and holds only in-flight
+  work.
+- Collaborators do not need avc. A clone is a normal repository, and avc
+  only changes how agents on *your* machine coordinate.
+- Sharing across machines still goes through the Git host: each machine runs
+  its own daemon, and the machines exchange commits with push and pull. A
+  daemon reachable over the network is a possible later step. It is not part
+  of avc today.
+
+This repository is itself developed with avc and published to GitHub this way
+(see `AGENTS.md`).
 
 ## Contract and limits (read before relying on it)
 

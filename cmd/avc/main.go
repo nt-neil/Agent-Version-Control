@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -23,12 +24,14 @@ const usageText = `avc — version coordination for many AI agents on one workin
   avc daemon [--root DIR] [--max-jobs N] [--workers N] [--nice N] [--max-load F] [--min-free-mb N]
   avc edit PATH --old STR --new STR [--token T]      exit 3 = conflict
   avc write PATH (--file SRC | --stdin) [--base SHA|absent] [--token T]
-  avc cat PATH
+  avc append PATH (--text STR | --stdin) [--token T]  never conflicts with other appends
+  avc cat PATH [--sha]                               --sha prints only the content hash
   avc lease acquire PATH --agent ID [--ttl 30s]      prints token
   avc lease release PATH --token T
   avc run [--snapshot | --freeze | --share] [--name N] -- CMD...
   avc checkpoint -m MSG
   avc flush | stats | shutdown
+  avc hook claude                                    Claude Code PreToolUse hook (see AGENTS.md)
 
 Exit codes: 0 ok, 1 error, 2 usage, 3 conflict, 4 lease refused, 5 changed outside avc, 6 busy (retry).
 The client finds the daemon by walking up from the current directory, or AVC_ROOT.`
@@ -81,10 +84,41 @@ func run(args []string) int {
 		return call(proto.Request{Op: "write", Path: *path, Content: data, Base: *base, Token: *tok}, false)
 	case "cat":
 		fs, path, a := parse("cat", args, true)
+		sha := fs.Bool("sha", false, "print only the sha256 of the content (for --base)")
 		if !finish(fs, path, a) {
 			return proto.ExitUsage
 		}
+		if *sha {
+			return call(proto.Request{Op: "cat", Path: *path}, false)
+		}
 		return call(proto.Request{Op: "cat", Path: *path}, true)
+	case "append":
+		fs, path, a := parse("append", args, true)
+		text := fs.String("text", "", "text to append")
+		stdin := fs.Bool("stdin", false, "read the text from stdin")
+		tok := fs.Uint64("token", 0, "lease token")
+		if !finish(fs, path, a) {
+			return proto.ExitUsage
+		}
+		data := []byte(*text)
+		if *stdin {
+			var err error
+			if data, err = readAll(os.Stdin); err != nil {
+				fmt.Fprintln(os.Stderr, "avc:", err)
+				return proto.ExitUsage
+			}
+		}
+		if len(data) == 0 {
+			fmt.Fprintln(os.Stderr, "avc: append needs --text or --stdin")
+			return proto.ExitUsage
+		}
+		return call(proto.Request{Op: "append", Path: *path, Content: data, Token: *tok}, false)
+	case "hook":
+		if len(args) != 1 || args[0] != "claude" {
+			fmt.Fprintln(os.Stderr, "usage: avc hook claude")
+			return proto.ExitUsage
+		}
+		return hookClaude()
 	case "lease":
 		if len(args) < 1 || (args[0] != "acquire" && args[0] != "release") {
 			fmt.Fprintln(os.Stderr, "usage: avc lease acquire|release PATH ...")
@@ -199,29 +233,16 @@ func call(req proto.Request, raw bool) int {
 			return proto.ExitError
 		}
 	}
-	if req.Op == "edit" || req.Op == "write" || req.Op == "cat" || req.Op == "lease" || req.Op == "release" {
+	switch req.Op {
+	case "edit", "write", "append", "cat", "lease", "release":
 		req.Agent = firstNonEmpty(req.Agent, os.Getenv("AVC_AGENT"))
 		if wd, err := os.Getwd(); err == nil && !strings.HasPrefix(req.Path, "/") {
 			req.Path = proto.Canonical(wd) + "/" + req.Path // engine relativizes against its root
 		}
 	}
-	if err := proto.CheckSocket(proto.SocketPath(root)); err != nil {
-		fmt.Fprintln(os.Stderr, "avc: refusing daemon socket:", err)
-		return proto.ExitError
-	}
-	c, err := net.Dial("unix", proto.SocketPath(root))
+	resp, err := send(root, req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "avc:", err)
-		return proto.ExitError
-	}
-	defer c.Close()
-	if err := json.NewEncoder(c).Encode(req); err != nil {
-		fmt.Fprintln(os.Stderr, "avc:", err)
-		return proto.ExitError
-	}
-	var resp proto.Response
-	if err := json.NewDecoder(c).Decode(&resp); err != nil {
-		if req.Op == "shutdown" {
+		if req.Op == "shutdown" && errors.Is(err, io.EOF) {
 			return 0
 		}
 		fmt.Fprintln(os.Stderr, "avc:", err)
@@ -249,6 +270,24 @@ func call(req proto.Request, raw bool) int {
 		fmt.Fprintln(os.Stderr, "avc:", resp.Error)
 	}
 	return resp.Code
+}
+
+// send delivers one request to the daemon serving root.
+func send(root string, req proto.Request) (proto.Response, error) {
+	var resp proto.Response
+	if err := proto.CheckSocket(proto.SocketPath(root)); err != nil {
+		return resp, fmt.Errorf("refusing daemon socket: %w", err)
+	}
+	c, err := net.Dial("unix", proto.SocketPath(root))
+	if err != nil {
+		return resp, err
+	}
+	defer c.Close()
+	if err := json.NewEncoder(c).Encode(req); err != nil {
+		return resp, err
+	}
+	err = json.NewDecoder(c).Decode(&resp)
+	return resp, err
 }
 
 func readAll(f *os.File) ([]byte, error) {

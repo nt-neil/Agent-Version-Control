@@ -163,3 +163,23 @@ func TestExternalChangeFailsClosed(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestConcurrentAppendsAllLand(t *testing.T) {
+	root := t.TempDir()
+	e := open(t, root)
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if c := e.Do(proto.Request{Op: "append", Path: "log.md", Content: []byte(fmt.Sprintf("line-%02d\n", i))}).Code; c != proto.ExitOK {
+				t.Errorf("append %d: code %d", i, c)
+			}
+		}(i)
+	}
+	wg.Wait()
+	got, _ := os.ReadFile(filepath.Join(root, "log.md"))
+	if n := strings.Count(string(got), "line-"); n != 50 {
+		t.Fatalf("want 50 lines, got %d:\n%s", n, got)
+	}
+}

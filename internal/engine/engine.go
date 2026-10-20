@@ -271,7 +271,7 @@ func (e *Engine) process(batch []*op) (stop bool) {
 	for _, o := range batch {
 		r := o.req
 		switch r.Op {
-		case "edit", "write":
+		case "edit", "write", "append":
 			if e.frozen > 0 {
 				n := len(r.Content) + len(r.Old) + len(r.New)
 				if len(e.held) >= proto.MaxHeldOps || e.heldB+n > proto.MaxHeldBytes {
@@ -406,6 +406,10 @@ func (e *Engine) mutate(r proto.Request, stage map[string]staged) proto.Response
 		default:
 			return proto.Response{Code: proto.ExitConflict, Error: fmt.Sprintf("anchor matches %d times in %s; give more context", n, p)}
 		}
+	case "append":
+		// Appends never conflict with each other: two agents adding to the
+		// same log both land, in arrival order.
+		next = append(append([]byte{}, cur...), r.Content...)
 	case "write":
 		if r.Base != "" {
 			have := "absent"
