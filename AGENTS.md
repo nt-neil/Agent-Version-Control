@@ -35,6 +35,7 @@ bin/avc append PATH --text '...'                                # add to the end
 bin/avc write PATH --stdin --base absent < new-file             # new file
 bin/avc write PATH --stdin --base "$(bin/avc cat PATH --sha)" < rewritten   # full rewrite
 bin/avc cat PATH                                                # read the latest version
+bin/avc rm PATH                                                 # delete a file
 ```
 
 - `--old` must match exactly once. Include enough surrounding lines.
@@ -54,7 +55,7 @@ bin/avc lease release PATH --token "$T"
 ## 3. Run builds and tests through avc
 
 ```sh
-bin/avc run -- go vet ./...
+bin/avc run --light -- go vet ./...                # quick commands skip the load gate
 bin/avc run --snapshot -- go test ./... -count=1   # runs on a stable copy; others keep editing
 ```
 
@@ -74,10 +75,18 @@ Co-Authored-By: <your model> <noreply@...>"
 included. Agree on who checkpoints. When several agents work at once, one
 coordinator does it. Push with plain `git push` as usual.
 
-## 5. Report friction
+## 5. Improve avc yourself
 
-The point of this setup is to find what hurts. Each time avc gets in your way,
-add an entry to `DOGFOOD.md` (through `avc edit`, of course). Examples: a
-confusing message, a missing command, a retry loop, a step you had to do by
-hand. One line is enough: the date, what you tried, what happened and what
-would have helped.
+This repository improves itself by using itself. The loop:
+
+1. **Notice.** Each time avc gets in your way, add one line to `DOGFOOD.md`
+   with `avc append`: the date, what you tried, what happened and what would
+   have helped. Examples: a confusing message, a missing command, a retry
+   loop, a step you had to do by hand, a bug.
+2. **Fix it now.** Do not wait to be asked. Bugs, open `DOGFOOD.md` entries
+   and review findings are yours to fix in the same session. Write a
+   regression test, run the tests through `avc run`, mark the entry
+   `**Fixed:** …`, `avc checkpoint`, `git push`.
+3. **Ask only when the direction changes.** That means a new product
+   direction or scope, an architecture change, work in another repository, or
+   anything destructive. Everything else, just do and report.

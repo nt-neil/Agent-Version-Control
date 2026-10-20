@@ -48,6 +48,9 @@ type Job struct {
 	// to run in plus a cleanup. Doing it after admission keeps per-job state
 	// (such as snapshots) bounded by MaxJobs.
 	Prepare func(ctx context.Context) (dir string, cleanup func(), err error)
+	// Light marks a quick command (formatters, vet, linters on a few files).
+	// It skips the load gate and the main queue but has its own small cap.
+	Light bool
 }
 
 type Result struct {
@@ -68,6 +71,7 @@ type flight struct {
 type Governor struct {
 	cfg   Config
 	slots chan struct{}
+	light chan struct{}
 
 	mu      sync.Mutex
 	running int
@@ -91,6 +95,7 @@ func New(cfg Config) *Governor {
 	return &Governor{
 		cfg:     cfg,
 		slots:   make(chan struct{}, cfg.MaxJobs),
+		light:   make(chan struct{}, max(2, runtime.NumCPU()/2)),
 		flights: map[string]*flight{},
 		stats:   map[string]int64{},
 	}
@@ -141,16 +146,23 @@ func (g *Governor) Run(ctx context.Context, j Job) Result {
 func (g *Governor) execute(ctx context.Context, j Job) Result {
 	start := time.Now()
 	g.bump("queued", 1)
+	slots := g.slots
+	if j.Light {
+		slots = g.light
+		g.bump("light_started", 1)
+	}
 	select {
-	case g.slots <- struct{}{}:
+	case slots <- struct{}{}:
 	case <-ctx.Done():
 		g.bump("queued", -1)
 		return Result{ExitCode: -1, Err: ctx.Err().Error()}
 	}
-	defer func() { <-g.slots }()
-	if err := g.waitForHeadroom(ctx); err != nil {
-		g.bump("queued", -1)
-		return Result{ExitCode: -1, Err: err.Error()}
+	defer func() { <-slots }()
+	if !j.Light {
+		if err := g.waitForHeadroom(ctx); err != nil {
+			g.bump("queued", -1)
+			return Result{ExitCode: -1, Err: err.Error()}
+		}
 	}
 	g.bump("queued", -1)
 	g.mu.Lock()

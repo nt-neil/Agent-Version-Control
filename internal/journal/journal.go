@@ -18,8 +18,9 @@ import (
 )
 
 type Record struct {
-	Seq   uint64            `json:"seq"`
-	Files map[string][]byte `json:"files"`
+	Seq     uint64            `json:"seq"`
+	Files   map[string][]byte `json:"files"`
+	Deleted []string          `json:"deleted,omitempty"`
 }
 
 type Journal struct {

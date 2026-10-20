@@ -56,6 +56,7 @@ type Request struct {
 	Share    bool     `json:"share,omitempty"`
 	Freeze   bool     `json:"freeze,omitempty"`
 	Snapshot bool     `json:"snapshot,omitempty"`
+	Light    bool     `json:"light,omitempty"`
 }
 
 type Response struct {

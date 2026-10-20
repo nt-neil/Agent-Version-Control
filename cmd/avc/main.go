@@ -25,10 +25,11 @@ const usageText = `avc — version coordination for many AI agents on one workin
   avc edit PATH --old STR --new STR [--token T]      exit 3 = conflict
   avc write PATH (--file SRC | --stdin) [--base SHA|absent] [--token T]
   avc append PATH (--text STR | --stdin) [--token T]  never conflicts with other appends
+  avc rm PATH [--token T]                            delete a file
   avc cat PATH [--sha]                               --sha prints only the content hash
   avc lease acquire PATH --agent ID [--ttl 30s]      prints token
   avc lease release PATH --token T
-  avc run [--snapshot | --freeze | --share] [--name N] -- CMD...
+  avc run [--snapshot | --freeze | --share] [--light] [--name N] -- CMD...
   avc checkpoint -m MSG
   avc flush | stats | shutdown
   avc hook claude                                    Claude Code PreToolUse hook (see AGENTS.md)
@@ -113,6 +114,13 @@ func run(args []string) int {
 			return proto.ExitUsage
 		}
 		return call(proto.Request{Op: "append", Path: *path, Content: data, Token: *tok}, false)
+	case "rm":
+		fs, path, a := parse("rm", args, true)
+		tok := fs.Uint64("token", 0, "lease token")
+		if !finish(fs, path, a) {
+			return proto.ExitUsage
+		}
+		return call(proto.Request{Op: "delete", Path: *path, Token: *tok}, false)
 	case "hook":
 		if len(args) != 1 || args[0] != "claude" {
 			fmt.Fprintln(os.Stderr, "usage: avc hook claude")
@@ -146,12 +154,13 @@ func run(args []string) int {
 		share := fs.Bool("share", false, "let identical concurrent runs on the same tree version share one execution")
 		freeze := fs.Bool("freeze", false, "pause integration while the command runs")
 		snapshot := fs.Bool("snapshot", false, "run in a cloned snapshot of the tree (no pause for other agents)")
+		light := fs.Bool("light", false, "quick command (format, vet, lint): skip the load gate and main queue")
 		name := fs.String("name", "", "label for stats")
 		if fs.Parse(args[:i]) != nil {
 			return proto.ExitUsage
 		}
 		wd, _ := os.Getwd()
-		return call(proto.Request{Op: "run", Argv: args[i+1:], Dir: wd, Env: os.Environ(), Share: *share, Freeze: *freeze, Snapshot: *snapshot, Message: *name}, false)
+		return call(proto.Request{Op: "run", Argv: args[i+1:], Dir: wd, Env: os.Environ(), Share: *share, Freeze: *freeze, Snapshot: *snapshot, Light: *light, Message: *name}, false)
 	case "checkpoint":
 		fs := flag.NewFlagSet("checkpoint", flag.ContinueOnError)
 		msg := fs.String("m", "", "commit message")
@@ -234,7 +243,7 @@ func call(req proto.Request, raw bool) int {
 		}
 	}
 	switch req.Op {
-	case "edit", "write", "append", "cat", "lease", "release":
+	case "edit", "write", "append", "delete", "cat", "lease", "release":
 		req.Agent = firstNonEmpty(req.Agent, os.Getenv("AVC_AGENT"))
 		if wd, err := os.Getwd(); err == nil && !strings.HasPrefix(req.Path, "/") {
 			req.Path = proto.Canonical(wd) + "/" + req.Path // engine relativizes against its root

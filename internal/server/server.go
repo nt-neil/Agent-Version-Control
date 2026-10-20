@@ -266,7 +266,7 @@ func (s *Server) run(req proto.Request, c net.Conn) proto.Response {
 	before := s.eng.Do(proto.Request{Op: startOp}).Info["gen"]
 	job := govern.Job{
 		Name: req.Message, Argv: req.Argv, Dir: dir, Env: req.Env,
-		Share: req.Share, ShareKey: toString(before),
+		Share: req.Share, ShareKey: toString(before), Light: req.Light,
 	}
 	if req.Snapshot {
 		job.Prepare = func(ctx context.Context) (string, func(), error) {

@@ -195,3 +195,33 @@ func TestFlushSurvivesFileDeletedOutsideAvc(t *testing.T) {
 		t.Fatalf("flush after external delete: %d %s", r.Code, r.Error)
 	}
 }
+
+func TestDeleteIsJournaledAndReplayed(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "gone.txt"), []byte("x"), 0o644)
+	e := open(t, root)
+	if c := e.Do(proto.Request{Op: "delete", Path: "gone.txt"}).Code; c != proto.ExitOK {
+		t.Fatalf("delete: %d", c)
+	}
+	if _, err := os.Stat(filepath.Join(root, "gone.txt")); !os.IsNotExist(err) {
+		t.Fatalf("file still there: %v", err)
+	}
+	if c := e.Do(proto.Request{Op: "delete", Path: "gone.txt"}).Code; c != proto.ExitConflict {
+		t.Fatalf("second delete: want conflict, got %d", c)
+	}
+	if c := e.Do(proto.Request{Op: "edit", Path: "gone.txt", Old: "x", New: "y"}).Code; c != proto.ExitConflict {
+		t.Fatalf("edit after delete: want conflict, got %d", c)
+	}
+
+	// A crash after the journal fsync but before the remove must still delete.
+	root2 := t.TempDir()
+	os.WriteFile(filepath.Join(root2, "gone.txt"), []byte("x"), 0o644)
+	os.MkdirAll(filepath.Join(root2, ".avc"), 0o700)
+	j, _, _ := journal.Open(filepath.Join(root2, ".avc", "journal"))
+	j.Append(journal.Record{Seq: 1, Files: map[string][]byte{}, Deleted: []string{"gone.txt"}})
+	j.Close()
+	open(t, root2)
+	if _, err := os.Stat(filepath.Join(root2, "gone.txt")); !os.IsNotExist(err) {
+		t.Fatalf("replay did not delete: %v", err)
+	}
+}

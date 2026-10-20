@@ -91,3 +91,27 @@ func TestPrepareRunsAfterAdmission(t *testing.T) {
 		t.Fatalf("prepare not used: %q cleaned=%v", r.Output, cleaned)
 	}
 }
+
+func TestLightJobsSkipTheQueue(t *testing.T) {
+	g := New(quiet(1))
+	done := make(chan Result, 1)
+	go func() {
+		done <- g.Run(context.Background(), Job{Argv: []string{"sh", "-c", "sleep 1"}, Dir: t.TempDir()})
+	}()
+	time.Sleep(100 * time.Millisecond) // the heavy job now holds the only slot
+	start := time.Now()
+	r := g.Run(context.Background(), Job{Argv: []string{"echo", "ok"}, Dir: t.TempDir(), Light: true})
+	if r.ExitCode != 0 || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("light job waited %v behind a heavy one (exit %d)", time.Since(start), r.ExitCode)
+	}
+	<-done
+}
+
+func TestLightJobsSkipTheLoadGate(t *testing.T) {
+	g := New(Config{MaxJobs: 1, MaxLoad: 0.000001, MinFreeMemMB: 1}) // gate always closed
+	start := time.Now()
+	r := g.Run(context.Background(), Job{Argv: []string{"echo", "ok"}, Dir: t.TempDir(), Light: true})
+	if r.ExitCode != 0 || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("light job waited %v at the load gate (exit %d)", time.Since(start), r.ExitCode)
+	}
+}

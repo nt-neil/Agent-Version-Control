@@ -51,6 +51,7 @@ type op struct {
 type staged struct {
 	path string
 	data []byte
+	del  bool // the batch deletes the file
 }
 
 // Maps are keyed by a path's identity: its canonical spelling, lowercased on
@@ -127,10 +128,8 @@ func Open(root string) (*Engine, error) {
 		done:    make(chan struct{}),
 	}
 	for _, r := range recs {
-		for p, data := range r.Files {
-			if err := e.writeFile(p, data); err != nil {
-				return nil, fmt.Errorf("recover %s: %w", p, err)
-			}
+		if err := e.apply(r); err != nil {
+			return nil, fmt.Errorf("recover batch %d: %w", r.Seq, err)
 		}
 		e.seq = r.Seq
 		e.stats["recovered_batches"]++
@@ -218,24 +217,24 @@ func (e *Engine) process(batch []*op) (stop bool) {
 
 	commit := func() {
 		if len(stage) > 0 {
-			files := make(map[string][]byte, len(stage))
+			rec := journal.Record{Seq: e.seq + 1, Files: map[string][]byte{}}
 			for _, s := range stage {
-				files[s.path] = s.data
+				if s.del {
+					rec.Deleted = append(rec.Deleted, s.path)
+				} else {
+					rec.Files[s.path] = s.data
+				}
 			}
-			e.seq++
-			err := e.j.Append(journal.Record{Seq: e.seq, Files: files})
-			if err != nil {
-				e.seq--
-			} else {
-				for p, data := range files {
-					if werr := e.writeFile(p, data); werr != nil {
-						// The batch is durable but the tree is now behind the
-						// journal. Stop: keep the journal, refuse new edits,
-						// and let recovery on restart finish these writes.
-						e.stalled = fmt.Errorf("batch %d is in the journal but writing %s failed (%v); restart the daemon to apply it", e.seq, p, werr)
-						err = e.stalled
-						break
-					}
+			files := rec.Files
+			err := e.j.Append(rec)
+			if err == nil {
+				e.seq++
+				if werr := e.apply(rec); werr != nil {
+					// The batch is durable but the tree is now behind the
+					// journal. Stop: keep the journal, refuse new edits,
+					// and let recovery on restart finish these writes.
+					e.stalled = fmt.Errorf("batch %d is in the journal but applying it failed (%v); restart the daemon to apply it", e.seq, werr)
+					err = e.stalled
 				}
 			}
 			if err != nil {
@@ -271,7 +270,7 @@ func (e *Engine) process(batch []*op) (stop bool) {
 	for _, o := range batch {
 		r := o.req
 		switch r.Op {
-		case "edit", "write", "append":
+		case "edit", "write", "append", "delete":
 			if e.frozen > 0 {
 				n := len(r.Content) + len(r.Old) + len(r.New)
 				if len(e.held) >= proto.MaxHeldOps || e.heldB+n > proto.MaxHeldBytes {
@@ -377,7 +376,7 @@ func (e *Engine) mutate(r proto.Request, stage map[string]staged) proto.Response
 	}
 	cur, exists := stage[id].data, true
 	if s, inBatch := stage[id]; inBatch {
-		p = s.path
+		p, exists = s.path, !s.del
 	} else {
 		f, err := e.load(p, id)
 		if errors.Is(err, errDrift) {
@@ -421,9 +420,34 @@ func (e *Engine) mutate(r proto.Request, stage map[string]staged) proto.Response
 			}
 		}
 		next = r.Content
+	case "delete":
+		if !exists {
+			return proto.Response{Code: proto.ExitConflict, Error: "no such file: " + p}
+		}
+		stage[id] = staged{path: p, del: true}
+		return proto.Response{}
 	}
 	stage[id] = staged{path: p, data: next}
 	return proto.Response{SHA: sum(next)}
+}
+
+// apply materializes one journal record: write every after-image, remove
+// every deleted path. Both are idempotent, so replaying a record is safe.
+func (e *Engine) apply(r journal.Record) error {
+	for p, data := range r.Files {
+		if err := e.writeFile(p, data); err != nil {
+			return fmt.Errorf("write %s: %w", p, err)
+		}
+	}
+	for _, p := range r.Deleted {
+		if err := os.Remove(filepath.Join(e.root, p)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("delete %s: %w", p, err)
+		}
+		id := e.identity(p)
+		e.files[id] = &file{}
+		e.unsyncd[id] = p // its directory still needs an fsync
+	}
+	return nil
 }
 
 var errDrift = errors.New("drift")
@@ -498,10 +522,9 @@ func (e *Engine) syncAll() error {
 	dirs := map[string]bool{}
 	for _, p := range e.unsyncd {
 		abs := filepath.Join(e.root, p)
-		if err := fsync(abs); err != nil {
-			if os.IsNotExist(err) {
-				continue // deleted outside avc since we wrote it; the disk is the truth
-			}
+		// A missing file was deleted (by avc or outside it); the disk is the
+		// truth, and its directory still gets synced below.
+		if err := fsync(abs); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		for d := filepath.Dir(abs); !dirs[d]; d = filepath.Dir(d) {

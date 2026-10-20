@@ -75,7 +75,7 @@ func hookClaude() int {
 	}
 	switch resp.Code {
 	case proto.ExitOK:
-		return deny(fmt.Sprintf("Applied through avc (batch %d): %s now contains your change. Do not retry this %s; continue with the next step.", resp.Seq, path, in.ToolName))
+		return deny(fmt.Sprintf("Applied through avc (batch %d): %s now contains your change. Do not retry this %s. Read the file again before editing it further.", resp.Seq, path, in.ToolName))
 	case proto.ExitConflict:
 		return deny("avc conflict, nothing was changed: " + resp.Error + ". Read the file again and redo the edit against its current content.")
 	case proto.ExitDrift:
