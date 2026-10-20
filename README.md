@@ -74,6 +74,13 @@ tells Claude it has landed, or why it was refused. Without a daemon it does
 nothing and the tools work as usual. `replace_all` and MultiEdit are refused,
 with a hint to use one unique edit at a time.
 
+The hook runs before Claude Code asks for permission, so it acts only when you
+have already allowed edits (`acceptEdits` or `bypassPermissions` mode). In
+the default, plan and auto modes it stays out of the way: Claude Code asks you
+as usual and writes the file itself. Files under `.claude/` and `.github/`
+are never applied by the hook; they always go through Claude Code's own
+checks.
+
 ## Working with GitHub and other Git hosts
 
 avc does not replace Git or your Git host. It sits in front of Git on **one

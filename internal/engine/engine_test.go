@@ -183,3 +183,15 @@ func TestConcurrentAppendsAllLand(t *testing.T) {
 		t.Fatalf("want 50 lines, got %d:\n%s", n, got)
 	}
 }
+
+func TestFlushSurvivesFileDeletedOutsideAvc(t *testing.T) {
+	root := t.TempDir()
+	e := open(t, root)
+	if c := e.Do(proto.Request{Op: "write", Path: "tmp.txt", Content: []byte("x")}).Code; c != proto.ExitOK {
+		t.Fatalf("write: %d", c)
+	}
+	os.Remove(filepath.Join(root, "tmp.txt"))
+	if r := e.Do(proto.Request{Op: "flush"}); r.Code != proto.ExitOK {
+		t.Fatalf("flush after external delete: %d %s", r.Code, r.Error)
+	}
+}

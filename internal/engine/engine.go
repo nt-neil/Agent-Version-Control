@@ -499,6 +499,9 @@ func (e *Engine) syncAll() error {
 	for _, p := range e.unsyncd {
 		abs := filepath.Join(e.root, p)
 		if err := fsync(abs); err != nil {
+			if os.IsNotExist(err) {
+				continue // deleted outside avc since we wrote it; the disk is the truth
+			}
 			return err
 		}
 		for d := filepath.Dir(abs); !dirs[d]; d = filepath.Dir(d) {

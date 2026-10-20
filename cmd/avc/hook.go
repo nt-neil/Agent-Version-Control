@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nt-neil/Agent-Version-Control/internal/proto"
 )
@@ -14,10 +15,17 @@ import (
 // file being edited, it applies Edit and Write through avc and then denies the
 // original tool call, telling Claude the change has already landed. Otherwise
 // it stays silent and the tool runs normally.
+//
+// The hook runs before Claude Code's permission check, so it only applies
+// changes the user has already pre-approved (acceptEdits or bypassPermissions
+// mode). In any other mode the normal permission flow runs and the tool writes
+// the file itself; avc picks the change up on its next read. Files that govern
+// the agent or CI (.claude/, .github/) are never applied through the hook.
 func hookClaude() int {
 	var in struct {
-		ToolName  string `json:"tool_name"`
-		ToolInput struct {
+		PermissionMode string `json:"permission_mode"`
+		ToolName       string `json:"tool_name"`
+		ToolInput      struct {
 			FilePath   string `json:"file_path"`
 			OldString  string `json:"old_string"`
 			NewString  string `json:"new_string"`
@@ -32,9 +40,18 @@ func hookClaude() int {
 	if path == "" || !filepath.IsAbs(path) {
 		return 0
 	}
+	if in.PermissionMode != "acceptEdits" && in.PermissionMode != "bypassPermissions" {
+		return 0 // the user approves each edit; do not act before they do
+	}
 	root, ok := proto.FindRoot(filepath.Dir(path))
 	if !ok {
 		return 0 // no daemon: plain editing
+	}
+	if rel, err := filepath.Rel(root, proto.Canonical(path)); err == nil {
+		first := strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
+		if strings.EqualFold(first, ".claude") || strings.EqualFold(first, ".github") {
+			return 0 // agent and CI configuration keep Claude Code's own checks
+		}
 	}
 
 	var req proto.Request

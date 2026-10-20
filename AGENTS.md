@@ -23,7 +23,9 @@ the old binary. Restart it only when no other agent is mid-task:
 through avc. Use them normally while the daemon runs. A successful change comes
 back as a blocked tool call that says "Applied through avc", which means it
 landed. Do not retry it. `replace_all` and MultiEdit are refused; make one
-unique edit at a time.
+unique edit at a time. The hook only acts in `acceptEdits` or
+`bypassPermissions` mode, and never on `.claude/` or `.github/`. In other
+modes your edits go through Claude Code's normal approval and land directly.
 
 **Other agents and shell use:**
 

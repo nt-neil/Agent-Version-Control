@@ -9,3 +9,4 @@ date, what you tried, what happened and what would have helped.
 
 - 2026-10-20 · Light commands (`gofmt -l`, `go vet`) wait behind the load gate like full test suites: with load around 35, each waited the 60 s cap. A way to mark a job light (or gate only heavy ones) would help.
 - 2026-10-20 · There is no `avc rm`. A test file created through avc had to be deleted directly, behind the daemon's back. A delete op would help.
+- 2026-10-20 · A file written through avc and then deleted directly (no `avc rm`) made every later flush fail, so `avc checkpoint` was stuck. **Fixed:** sync skips files deleted since they were written. The missing delete op is still open.
